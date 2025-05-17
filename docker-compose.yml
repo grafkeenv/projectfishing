@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - .:/app
+    ports:
+      - "8001:8001"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - SECRET_KEY=${SECRET_KEY}
+    depends_on:
+      - db
+    networks:
+      - shared_network
+
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    networks:
+      - shared_network
+
+
+  tests:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+    command: >
+      sh -c "while ! nc -z db 5432; do sleep 1; done &&
+             PYTHONPATH=. pytest tests/unit/ -v"
+    networks:
+      - shared_network
+    
+  locust:
+    build: .
+    volumes:
+    - .:/app
+    ports:
+      - "8089:8089"
+    command: locust -f tests/load/locustfile.py --host http://app:8001
+    depends_on:
+      - app
+    networks:
+    - shared_network
+  
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://app:8001
+    depends_on:
+      - app
+    networks:
+      - shared_network
+
+
+volumes:
+  postgres_data:
+
+networks:
+  shared_network:
+    driver: bridge
